@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import importlib.util
 import io
 import json
 import shutil
@@ -29,12 +30,28 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from render_metadata import render_metadata
-
 TARBALL_SPECS = {
     "tsp": ("arxiv_tsp.tar.gz", "paper_tsp.tex"),
     "mech": ("arxiv_mech_design.tar.gz", "paper_mech_design.tex"),
 }
+
+
+def load_renderer(renderer_path: Path, expected_sha: str | None = None):
+    if not renderer_path.is_file():
+        raise SystemExit(f"REJECT: missing metadata renderer at {renderer_path}")
+    if expected_sha is not None:
+        actual_sha = sha256_file(renderer_path)
+        if actual_sha != expected_sha:
+            raise SystemExit(
+                f"REJECT: scripts/render_metadata.py digest mismatch! "
+                f"expected={expected_sha} actual={actual_sha}"
+            )
+    spec = importlib.util.spec_from_file_location("_authenticated_render_metadata", str(renderer_path))
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"REJECT: failed to load renderer spec from {renderer_path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.render_metadata
 
 
 def sha256_bytes(b: bytes) -> str:
@@ -157,15 +174,14 @@ def compile_pdflatex(work_dir: Path, main_tex: str) -> tuple[str, Path]:
 def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     paper_dir = repo_root / "paper"
+    renderer_path = repo_root / "scripts" / "render_metadata.py"
     tar_name, main_tex = detect_bundle(repo_root)
     live_tar = repo_root / tar_name
     init_build = "--init-build" in sys.argv
 
-    # 1. Regenerate metadata.tex from metadata.json via frozen renderer
-    meta_tex = render_metadata(paper_dir)
-    fresh_meta_hash = sha256_file(meta_tex)
-
     if init_build:
+        render_metadata = load_renderer(renderer_path, expected_sha=None)
+        meta_tex = render_metadata(paper_dir)
         with tempfile.TemporaryDirectory(prefix="release_init_") as td:
             tdir = Path(td)
             rebuilt_tar = tdir / tar_name
@@ -185,8 +201,17 @@ def main() -> None:
             }, indent=2))
             return
 
-    # 2. Authenticate baseline tarball against frozen SHA256SUMS.txt
+    # 1. Load frozen SHA256SUMS.txt and authenticate scripts/render_metadata.py BEFORE importing it
     manifest = load_manifest(repo_root / "SHA256SUMS.txt")
+    if "scripts/render_metadata.py" not in manifest:
+        raise SystemExit("REJECT: scripts/render_metadata.py missing from frozen SHA256SUMS.txt")
+    render_metadata = load_renderer(renderer_path, expected_sha=manifest["scripts/render_metadata.py"])
+
+    # 2. Regenerate metadata.tex from metadata.json via authenticated frozen renderer
+    meta_tex = render_metadata(paper_dir)
+    fresh_meta_hash = sha256_file(meta_tex)
+
+    # 3. Authenticate baseline tarball against frozen SHA256SUMS.txt
     if tar_name not in manifest:
         raise SystemExit(f"REJECT: {tar_name} missing from frozen SHA256SUMS.txt")
     expected_tar_sha = manifest[tar_name]
