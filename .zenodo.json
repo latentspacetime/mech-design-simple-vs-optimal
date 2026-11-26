@@ -1,0 +1,23 @@
+{
+  "upload_type": "software",
+  "access_right": "open",
+  "title": "Tighter Certified Bounds [2.195, 2.48] for Simple versus Optimal Mechanisms via Time-Varying Jensen Alignment, Three-Moment Envelopes, and All-Paid Entry-Fee Spectra",
+  "description": "Manuscript PDF, arXiv source tarball, offline Rust and Python mpmath.iv interval verifiers, bundled offline wheelhouse, and Lean 4 + Mathlib formalization (55 audited theorems plus 21 public helper lemmas, zero sorry, zero native_decide) tightening the worst-case simple-versus-optimal revenue ratio for a single additive buyer to the certified interval [439/200, 62/25] = [2.195, 2.48], with an explicit finite deterministic DSIC/IR witness at N_b = 2^46800.",
+  "license": "mit",
+  "creators": [
+    {
+      "name": "Lavergne, Adrian",
+      "affiliation": "Independent Researcher"
+    }
+  ],
+  "keywords": [
+    "Mechanism Design",
+    "Algorithmic Game Theory",
+    "Simple versus Optimal Mechanisms",
+    "Additive Buyer",
+    "Interval Arithmetic",
+    "Lean 4",
+    "Formal Verification",
+    "Computer-Assisted Proofs"
+  ]
+}
