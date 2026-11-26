@@ -146,7 +146,7 @@ def compare_trees(jnode, lnode, path="root"):
 
 def check_tree():
     with open(TREE_JSON) as f:
-        jdata = json.load(f)
+        jdata = json.load(f, parse_float=str)
     ltext = TREE_LEAN.read_text()
 
     # Check scalars
@@ -182,7 +182,7 @@ def check_tree():
 def check_lb():
     require(LB_LEAN.exists(), f"Missing {LB_LEAN}")
     with open(LB_JSON) as f:
-        jdata = json.load(f)
+        jdata = json.load(f, parse_float=str)
     ltext = LB_LEAN.read_text()
     for name, val in [
         ("gridDen", jdata["grid_den"]),

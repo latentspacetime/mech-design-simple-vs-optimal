@@ -37,21 +37,24 @@ TARBALL_SPECS = {
 
 
 def load_renderer(renderer_path: Path, expected_sha: str | None = None):
+    """Read renderer bytes ONCE, verify SHA-256 against SHA256SUMS.txt, and compile/exec
+    those exact in-memory bytes (zero TOCTOU re-read, zero .pyc bytecode cache bypass)."""
     if not renderer_path.is_file():
         raise SystemExit(f"REJECT: missing metadata renderer at {renderer_path}")
+    src_bytes = renderer_path.read_bytes()
     if expected_sha is not None:
-        actual_sha = sha256_file(renderer_path)
+        actual_sha = sha256_bytes(src_bytes)
         if actual_sha != expected_sha:
             raise SystemExit(
                 f"REJECT: scripts/render_metadata.py digest mismatch! "
                 f"expected={expected_sha} actual={actual_sha}"
             )
-    spec = importlib.util.spec_from_file_location("_authenticated_render_metadata", str(renderer_path))
-    if spec is None or spec.loader is None:
-        raise SystemExit(f"REJECT: failed to load renderer spec from {renderer_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.render_metadata
+    ns: dict[str, object] = {"__name__": "_authenticated_render_metadata", "__file__": str(renderer_path)}
+    exec(compile(src_bytes, str(renderer_path), "exec"), ns)
+    fn = ns.get("render_metadata")
+    if not callable(fn):
+        raise SystemExit(f"REJECT: render_metadata callable missing in {renderer_path}")
+    return fn
 
 
 def sha256_bytes(b: bytes) -> str:
@@ -201,17 +204,12 @@ def main() -> None:
             }, indent=2))
             return
 
-    # 1. Load frozen SHA256SUMS.txt and authenticate scripts/render_metadata.py BEFORE importing it
+    # 1. Load frozen SHA256SUMS.txt and authenticate scripts/render_metadata.py AND baseline tarball BEFORE writing anything
     manifest = load_manifest(repo_root / "SHA256SUMS.txt")
     if "scripts/render_metadata.py" not in manifest:
         raise SystemExit("REJECT: scripts/render_metadata.py missing from frozen SHA256SUMS.txt")
     render_metadata = load_renderer(renderer_path, expected_sha=manifest["scripts/render_metadata.py"])
 
-    # 2. Regenerate metadata.tex from metadata.json via authenticated frozen renderer
-    meta_tex = render_metadata(paper_dir)
-    fresh_meta_hash = sha256_file(meta_tex)
-
-    # 3. Authenticate baseline tarball against frozen SHA256SUMS.txt
     if tar_name not in manifest:
         raise SystemExit(f"REJECT: {tar_name} missing from frozen SHA256SUMS.txt")
     expected_tar_sha = manifest[tar_name]
@@ -226,6 +224,10 @@ def main() -> None:
         raise SystemExit(
             f"REJECT: neither {frozen_backup} nor {live_tar} matches frozen SHA256SUMS.txt digest {expected_tar_sha}."
         )
+
+    # 2. Regenerate metadata.tex from metadata.json via authenticated in-memory renderer
+    meta_tex = render_metadata(paper_dir)
+    fresh_meta_hash = sha256_file(meta_tex)
 
     # 3. Rebuild tarball into temp first, verify byte-for-byte delta against authenticated baseline + manifest
     with tempfile.TemporaryDirectory(prefix="release_delta_") as td:

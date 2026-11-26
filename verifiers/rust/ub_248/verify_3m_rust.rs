@@ -765,6 +765,11 @@ fn main() {
         })
         .collect();
 
+    let fmt_ceil_8 = |x: f64| -> String {
+        let scaled_hi = Iv::exact(x).mul(Iv::exact(100_000_000.0)).hi;
+        let n = scaled_hi.ceil() as u128;
+        format!("{}.{:08}", n / 100_000_000, n % 100_000_000)
+    };
     let mut failed = 0usize;
     let mut max_ub = 0.0f64;
     let mut worst_id = 0usize;
@@ -773,14 +778,15 @@ fn main() {
         if !ok {
             failed += 1;
             if failed <= 15 {
-                println!("  [RUST FAIL] leaf #{} est={:.6} ub<={:.8} > {}", idx, est, ub, expected_target_str);
+                println!("  [RUST FAIL] leaf #{} est={:.6} ub<={} > {}", idx, est, fmt_ceil_8(ub), expected_target_str);
             }
         }
     }
+    let cmp_sym = if failed == 0 { "<=" } else { ">" };
     println!("==========================================================================");
-    println!("RUST SELF-CERTIFIED VERIFIER {} in {:.2}s: ls=(3/50,7/20,9/5), leaves={}, disjoint={}, failed={}, max_ub<={:.8} <= {} (worst leaf #{})",
+    println!("RUST SELF-CERTIFIED VERIFIER {} in {:.2}s: ls=(3/50,7/20,9/5), leaves={}, disjoint={}, failed={}, max_ub<={} {} {} (worst leaf #{})",
              if failed == 0 { "PASS" } else { "FAIL" },
-             t0.elapsed().as_secs_f64(), results.len(), n_disjoint, failed, max_ub, expected_target_str, worst_id);
+             t0.elapsed().as_secs_f64(), results.len(), n_disjoint, failed, fmt_ceil_8(max_ub), cmp_sym, expected_target_str, worst_id);
     println!("==========================================================================");
     if failed > 0 { std::process::exit(1); }
 }

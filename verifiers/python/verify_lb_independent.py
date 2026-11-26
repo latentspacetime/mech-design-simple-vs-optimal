@@ -240,7 +240,7 @@ def frac_to_iv_checked(q: Fraction):
 def resolve_cert_path() -> Path:
     if len(sys.argv) > 1:
         return Path(sys.argv[1]).resolve()
-    p = Path(__file__).resolve().parent / "cert_lb_2195.json"
+    p = Path(__file__).resolve().parent.parent.parent / "certificates" / "cert_lb_2195.json"
     require(p.exists(), f"Certificate not found at {p}; pass explicit path as argv[1].")
     return p
 

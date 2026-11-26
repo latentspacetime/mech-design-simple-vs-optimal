@@ -102,7 +102,15 @@ def main() -> None:
         rec("U_CB3_shifted_ls_rs", "2.48 UB", "Claim-Binding/Schema", "Shifted ls[0]=0.07 rejected against pinned (3/50,7/20,9/5) (Rust)", rc, out, False, r"ls must equal exact rationals")
 
         rc, out = run_cmd([PY_BIN, "-O", str(PY_UB), str(CERT_UB)])
-        rec("U_CB4_python_dash_O", "2.48 UB", "Claim-Binding/Schema", "verify_3m_independent.py refuses Python -O", rc, out, False, r"refusing to run under Python -O")
+        rec("U_CB4_python_dash_O", "2.48 UB", "Runtime-Guard", "verify_3m_independent.py refuses Python -O", rc, out, False, r"refusing to run under Python -O")
+
+        # Exact decimal token claim-binding (must reject 2.4800000000000001 without binary64 rounding!)
+        raw_ub_txt = CERT_UB.read_text(encoding="utf-8")
+        mut_txt = raw_ub_txt.replace('"target": 2.48', '"target": 2.4800000000000001', 1)
+        assert mut_txt != raw_ub_txt
+        fp_b64 = tdir / "ub_b64.json"; fp_b64.write_text(mut_txt, encoding="utf-8")
+        rc, out = run_cmd([PY_BIN, str(PY_UB), str(fp_b64)])
+        rec("U_CB5_binary64_round_py", "2.48 UB", "Claim-Binding/Schema", "JSON target=2.4800000000000001 rejected without binary64 rounding (Py)", rc, out, False, r"exceeds theorem ceiling")
 
         # === 2.48 UB ARITHMETIC-SOUNDNESS TRAPS ===
         c = copy.deepcopy(orig_ub); c["target"] = 2.47
@@ -116,6 +124,24 @@ def main() -> None:
         fp = tdir / "ub_baddual.json"; fp.write_text(json.dumps(c), encoding="utf-8")
         rc, out = run_cmd([str(RS_UB), str(fp), "2.48"])
         rec("U_AS2_corrupt_dual_rs", "2.48 UB", "Arithmetic-Soundness", "Corrupt leaf #1 Farkas dual eta0=1.0 -> ub > 2.48 (Rust)", rc, out, False, r"RUST FAIL.*leaf #1|VERIFIER FAIL")
+
+        # Single-leaf Python arithmetic-soundness check (corrupt leaf #1 eta0=1.0 -> Python _verify_one returns ok=False!)
+        rc, out = run_cmd([PY_BIN, "-c",
+            f"import importlib.util, json; from fractions import Fraction\n"
+            f"spec = importlib.util.spec_from_file_location('m', {str(PY_UB)!r}); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+            f"d = json.loads(open({str(fp)!r}).read(), parse_float=str)\n"
+            f"def find_leaf(n):\n"
+            f"  if n['type'] == 'leaf': return n\n"
+            f"  if n['type'] == 'split':\n"
+            f"    for ch in n['children']:\n"
+            f"      r = find_leaf(ch)\n"
+            f"      if r: return r\n"
+            f"lf = find_leaf(d['tree'])\n"
+            f"m._init_w([m.parse_frac(x) for x in d['ls']], m.parse_frac(d['target']))\n"
+            f"idx, ok, ub = m._verify_one((1, [m.parse_frac(x) for x in lf['box']], [m.parse_frac(x) for x in lf['a']], [m.parse_frac(x) for x in lf['lam']], m.parse_frac(lf['eta0']), [m.parse_frac(x) for x in lf['y']]))\n"
+            f"print(f'PY_LEAF1 ok={{ok}} ub<={{m.ceil_dec(ub)}}')\n"
+            f"raise SystemExit(0 if ok else 1)\n"])
+        rec("U_AS2_corrupt_dual_py", "2.48 UB", "Arithmetic-Soundness", "Corrupt leaf #1 Farkas dual eta0=1.0 -> Python _verify_one returns False (Py)", rc, out, False, r"PY_LEAF1 ok=False")
 
         c = copy.deepcopy(orig_ub)
         c["tree"]["children"][0]["box"][1] = c["tree"]["children"][0]["box"][1] - 0.5
@@ -154,7 +180,7 @@ def main() -> None:
             "import MathForgeMechDesign.UpperBoundRecipAndTree\n"
             "open MathForgeMechDesign.Cert248 MathForgeMechDesign.UpperBoundRecipAndTree\n"
             "theorem trap_247 : qToReal certTarget ≤ 247 / 100 := by unfold qToReal certTarget; norm_num\n")
-        rec("U_AS6_lean_tighten_247", "2.48 UB", "Arithmetic-Soundness", "Lean Mathlib rejects tightened UB certTarget (62/25) -> 247/100", rc, out, False, r"unsolved goals|norm_num")
+        rec("U_AS6_lean_tighten_247", "2.48 UB", "Claim-Binding/Constant-Pin", "Lean Mathlib rejects tightened UB certTarget (62/25) -> 247/100", rc, out, False, r"unsolved goals|norm_num")
 
         rc, out = run_cmd(["lake", "env", "lean", "--stdin"], cwd=LEAN_MD, stdin_text=
             "import MathForgeMechDesign.UpperBoundRecipAndTree\n"
@@ -171,7 +197,7 @@ def main() -> None:
         rec("L_CB1_perturb_rg_rs", "2.195 LB", "Claim-Binding/Schema", "Perturb A1 r_num 227->228 rejected (Rust)", rc, out, False, r"Raw r_g mismatch in A1")
 
         rc, out = run_cmd([PY_BIN, "-O", str(PY_LB), str(CERT_LB)])
-        rec("L_CB2_python_dash_O", "2.195 LB", "Claim-Binding/Schema", "verify_lb_independent.py refuses Python -O", rc, out, False, r"Refusing to run under Python -O")
+        rec("L_CB2_python_dash_O", "2.195 LB", "Runtime-Guard", "verify_lb_independent.py refuses Python -O", rc, out, False, r"Refusing to run under Python -O")
 
         rc, out = run_cmd([PY_BIN, "-c",
             f"import sys\np = {str(PY_LB)!r}\nsrc = open(p).read()\n"

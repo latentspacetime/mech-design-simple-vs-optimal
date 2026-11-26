@@ -1,6 +1,6 @@
 {
   "author": "Math-Forge Authors (Fill Before Public Submission)",
   "affiliation": "Independent Research (Fill Before Public Submission)",
-  "ai_disclosure": "AI models assisted with certificate search, Lean 4 formalization, and verification auditing; every analytic bridge, structural certificate, and numerical interval bound is independently machine-checked by deterministic verifiers and the Lean 4 kernel.",
+  "ai_disclosure": "AI models assisted with certificate search, Lean 4 formalization, and verification auditing. Core analytic, structural, DSIC/IR, and finite-witness theorems are kernel-proved in Lean 4 + Mathlib (55 theorems), heavy numerical quadrature and polynomial convolutions are independently verified by deterministic Rust and Python interval verifiers, and the remaining domain-reduction and probabilistic steps are proved on paper (see Table 4 and FORMALIZATION_COVERAGE_LEDGER.md).",
   "repo_url": "https://github.com/OWNER/mech-design-simple-vs-optimal"
 }

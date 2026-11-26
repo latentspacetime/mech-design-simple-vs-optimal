@@ -321,7 +321,7 @@ def main():
     args = ap.parse_args()
     t0 = time.time()
     with open(args.cert_path) as f:
-        data = json.load(f, parse_constant=reject_const)
+        data = json.load(f, parse_float=str, parse_constant=reject_const)
     require(isinstance(data, dict), "Certificate root must be a JSON object")
     require(isinstance(data.get("ls"), list), "ls must be a JSON list")
     ls_fr = [parse_frac(x) for x in data["ls"]]
