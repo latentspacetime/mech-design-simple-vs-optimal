@@ -1,0 +1,6 @@
+{
+  "author": "Math-Forge Authors (Fill Before Public Submission)",
+  "affiliation": "Independent Research (Fill Before Public Submission)",
+  "ai_disclosure": "AI models assisted with certificate search, Lean 4 formalization, and verification auditing; every analytic bridge, structural certificate, and numerical interval bound is independently machine-checked by deterministic verifiers and the Lean 4 kernel.",
+  "repo_url": "https://github.com/OWNER/mech-design-simple-vs-optimal"
+}

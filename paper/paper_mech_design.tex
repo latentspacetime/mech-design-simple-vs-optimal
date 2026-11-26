@@ -1,0 +1,45 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm,hyperref,booktabs}
+
+\input{metadata.tex}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\REV}{\mathsf{REV}}
+\newcommand{\DREV}{\mathsf{DREV}}
+\newcommand{\SREV}{\mathsf{SREV}}
+\newcommand{\BREV}{\mathsf{BREV}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\R}{\mathbb{R}}
+
+% Certified Part I (Upper Bound) constants:
+\newcommand{\BoundConst}{2.48}
+\newcommand{\BoundFrac}{\frac{62}{25}}
+\newcommand{\LeafCount}{722}
+\newcommand{\DisjointCount}{32}
+\newcommand{\RustCertUB}{2.47999983}
+\newcommand{\PyCertUB}{2.47999999}
+
+% Certified Part II (Lower Bound) constants:
+\newcommand{\TargetFrac}{\frac{439}{200}}
+\newcommand{\TargetDec}{2.195}
+\newcommand{\RustCertLB}{2.195136628895}
+\newcommand{\PyCertLB}{2.195136628912805523514}
+
+\title{Tighter Certified Bounds $[2.195, 2.48]$ for Simple versus Optimal Mechanisms via Time-Varying Jensen Alignment, Three-Moment Envelopes, and All-Paid Entry-Fee Spectra}
+\author{\PaperAuthor \\ \small \PaperAffiliation}
+\date{November 25, 2026}
+
+\begin{document}
+\maketitle
+
+\input{proof_body.tex}
+
+\end{document}

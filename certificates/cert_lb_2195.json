@@ -1,0 +1,21 @@
+{
+  "description": "Exact-rational 8-group finite-Na deterministic entry-fee lower bound certifying REV(X) > (439/200) * max(SREV(X), BREV(X)) = 2.195 * max(SREV(X), BREV(X)).",
+  "target_num": 439,
+  "target_den": 200,
+  "grid_den": 100,
+  "entry_fee_ticks": 700,
+  "Na": 5000,
+  "chernoff_P0_ticks": 5500,
+  "chernoff_t_num": 1,
+  "chernoff_t_den": 10,
+  "groups": [
+    {"name": "A1", "r_num": 227,  "r_den": 2000, "k_min": 7,    "k_max": 707,  "p_tick": 7},
+    {"name": "A2", "r_num": 207,  "r_den": 2000, "k_min": 11,   "k_max": 711,  "p_tick": 11},
+    {"name": "A3", "r_num": 9,    "r_den": 250,  "k_min": 16,   "k_max": 716,  "p_tick": 16},
+    {"name": "A4", "r_num": 547,  "r_den": 2000, "k_min": 46,   "k_max": 746,  "p_tick": 46},
+    {"name": "A5", "r_num": 179,  "r_den": 1000, "k_min": 82,   "k_max": 782,  "p_tick": 82},
+    {"name": "A6", "r_num": 199,  "r_den": 1000, "k_min": 118,  "k_max": 818,  "p_tick": 118},
+    {"name": "A7", "r_num": 817,  "r_den": 2000, "k_min": 166,  "k_max": 866,  "p_tick": 166},
+    {"name": "A8", "r_num": 7119, "r_den": 2000, "k_min": 1545, "k_max": 2245, "p_tick": 1545}
+  ]
+}

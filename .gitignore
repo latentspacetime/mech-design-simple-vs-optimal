@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+target/
+.lake/
+.venv/
+*.aux
+*.log
+*.out
+*.toc
+*.frozen_audited

@@ -1,0 +1,11 @@
+{
+  "process": {
+    "compiler": "pdflatex"
+  },
+  "sources": [
+    {
+      "filename": "paper_mech_design.tex",
+      "usage": "toplevel"
+    }
+  ]
+}
