@@ -12,6 +12,11 @@ if [ -z "${PY_BIN:-}" ]; then
   else
     PY_BIN="$(command -v python3)"
   fi
+else
+  case "$PY_BIN" in
+    */*) PY_BIN="$(cd "$(dirname "$PY_BIN")" && pwd)/$(basename "$PY_BIN")" ;;
+    *) PY_BIN="$(command -v "$PY_BIN")" ;;
+  esac
 fi
 
 echo "=== [1/6] Offline Rust builds & runs (pinned rustc 1.96.0) ==="

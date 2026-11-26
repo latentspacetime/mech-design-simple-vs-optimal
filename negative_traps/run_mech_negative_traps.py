@@ -28,7 +28,8 @@ PY_LB = REPO / "verifiers" / "python" / "verify_lb_independent.py"
 RS_UB = REPO / "verifiers" / "rust" / "ub_248" / "target" / "release" / "verify_3m_rust"
 RS_LB = REPO / "verifiers" / "rust" / "lb_2195" / "target" / "release" / "verify_lb_rust"
 LEAN_MD = REPO / "lean_mathlib"
-PY_BIN = os.environ.get("PY_BIN", sys.executable)
+_RAW_PY = os.environ.get("PY_BIN", sys.executable)
+PY_BIN = os.path.abspath(_RAW_PY) if ("/" in _RAW_PY or "\\" in _RAW_PY) else (shutil.which(_RAW_PY) or sys.executable)
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None, stdin_text: str | None = None) -> tuple[int, str]:
@@ -284,11 +285,9 @@ def main() -> None:
         env_rs["CARGO_HOME"] = str(cargo_home)
         env_rs["CARGO_BUILD_JOBS"] = "4"
         bld_rs = subprocess.run(["cargo", "build", "--release", "--locked", "--offline"], cwd=str(rs_lb_mut_dir), env=env_rs, capture_output=True, text=True)
-        if bld_rs.returncode != 0:
-            rc, out = bld_rs.returncode, bld_rs.stdout + "\n" + bld_rs.stderr
-        else:
-            rc, out = run_cmd([str(rs_lb_mut_dir / "target" / "release" / "verify_lb_rust"), str(fp_t)])
-        rec("L_AS1_target2196_arith_rs", "2.195 LB", "Arithmetic-Soundness", "Bypass pins & drive target=2.196 (> 2.195136...) -> ratio failure (Rust)", rc, out, False, r"Ratio lower bound <= target|panicked")
+        assert bld_rs.returncode == 0, f"Mutant verify_lb_rust failed to build:\n{bld_rs.stdout}\n{bld_rs.stderr}"
+        rc, out = run_cmd([str(rs_lb_mut_dir / "target" / "release" / "verify_lb_rust"), str(fp_t)])
+        rec("L_AS1_target2196_arith_rs", "2.195 LB", "Arithmetic-Soundness", "Bypass pins & drive target=2.196 (> 2.195136...) -> ratio failure (Rust)", rc, out, False, r"Ratio lower endpoint <= target")
 
         # JSON == Lean kernel rfl regression trap: gridDen := 100 -> 100 + 1 must be REJECTED
         lean_mut = tdir / "lean_mut"
