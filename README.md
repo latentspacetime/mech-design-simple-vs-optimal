@@ -5,6 +5,8 @@ Machine-checked certificates, offline-reproducible Rust and Python verifiers, Le
 - **Upper Bound:** `REV(X) <= (62/25) * max(SREV(X), BREV(X)) = 2.48 * max(SREV(X), BREV(X))` for all `m >= 1` and independent nonnegative distributions (vs. GH26 stated `5/2 = 2.50` in `arXiv:2609.35711v3` Prop. 4.6 and derived commentary `1499/600 = 2.498333...`).
 - **Deterministic Lower Bound:** `REV(X) >= DREV(X) > (439/200) * max(SREV(X), BREV(X)) = 2.195 * max(SREV(X), BREV(X))` witnessed by a finite DSIC/IR mechanism (`N_b = 2^46800`, `delta = S_A / 10^8`) under every buyer tie-breaking rule, with limiting ratio `>= 2.195136628895` (vs. GH26 stated `2026/925 = 2.190270...` and certified reevaluation `[2.190949496843, 2.190949496844]`).
 
+**Manuscript PDF:** [paper/paper_mech_design.pdf](paper/paper_mech_design.pdf) | **arXiv Source Tarball:** [arxiv_mech_design.tar.gz](arxiv_mech_design.tar.gz)
+
 ## Offline Python Setup
 
 Install pinned `mpmath==1.3.0` offline from the bundled wheelhouse:
