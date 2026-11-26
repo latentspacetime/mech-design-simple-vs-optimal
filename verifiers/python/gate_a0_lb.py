@@ -101,14 +101,13 @@ def poly_pow_trunc(base, exp: int, deg: int):
     return res
 
 
-def main():
+def eval_gh26_menu(label: str, F_ticks: int, p1_tick: int, uncond_pay_frac: Fraction) -> None:
     t0 = time.time()
     Na = 1000
     D = 40
-    F_ticks = 280
     deg = F_ticks - 1
     specs = [
-        ("A1", 5, 280, Fraction(3, 10), 0),
+        ("A1", 5, 280, Fraction(3, 10), p1_tick),
         ("A2", 40, 320, Fraction(19, 20), 40),
         ("A3", 600, 880, Fraction(27, 8), 600),
     ]
@@ -147,22 +146,23 @@ def main():
         Q_single.append(Q)
 
     P_pow = [poly_pow_trunc(P, Na, deg) for P in P_single]
-    P_pow_m1_1 = poly_pow_trunc(P_single[1], Na - 1, deg)
-    P_pow_m1_2 = poly_pow_trunc(P_single[2], Na - 1, deg)
+    P_pow_m1 = [poly_pow_trunc(P, Na - 1, deg) for P in P_single]
 
     P_12 = poly_mul_trunc(P_pow[0], P_pow[1], deg)
     P_tot = poly_mul_trunc(P_12, P_pow[2], deg)
     p_non_enter = sum(P_tot, mp.iv.mpf(0))
     p_enter = mp.iv.mpf(1) - p_non_enter
 
+    P_23 = poly_mul_trunc(P_pow[1], P_pow[2], deg)
     P_13 = poly_mul_trunc(P_pow[0], P_pow[2], deg)
-    loss_A2 = mp.iv.mpf(Na) * sum(poly_mul_trunc(poly_mul_trunc(Q_single[1], P_pow_m1_1, deg), P_13, deg), mp.iv.mpf(0))
-    loss_A3 = mp.iv.mpf(Na) * sum(poly_mul_trunc(poly_mul_trunc(Q_single[2], P_pow_m1_2, deg), P_12, deg), mp.iv.mpf(0))
-    loss_tot = loss_A2 + loss_A3
+    loss_A1 = mp.iv.mpf(Na) * sum(poly_mul_trunc(poly_mul_trunc(Q_single[0], P_pow_m1[0], deg), P_23, deg), mp.iv.mpf(0)) if p1_tick > 0 else mp.iv.mpf(0)
+    loss_A2 = mp.iv.mpf(Na) * sum(poly_mul_trunc(poly_mul_trunc(Q_single[1], P_pow_m1[1], deg), P_13, deg), mp.iv.mpf(0))
+    loss_A3 = mp.iv.mpf(Na) * sum(poly_mul_trunc(poly_mul_trunc(Q_single[2], P_pow_m1[2], deg), P_12, deg), mp.iv.mpf(0))
+    loss_tot = loss_A1 + loss_A2 + loss_A3
 
     SA_iv = frac_to_iv_checked(S_A)
     F_iv = frac_to_iv_checked(Fraction(F_ticks, D))
-    uncond_pay = frac_to_iv_checked(S_A - Fraction(3, 10))
+    uncond_pay = frac_to_iv_checked(uncond_pay_frac)
     E_A = uncond_pay + F_iv * p_enter - loss_tot
     ratio = (E_A + SA_iv) / SA_iv
 
@@ -171,13 +171,18 @@ def main():
     rat_lo, rat_hi = dyadic_tuple_to_frac(ratio._mpi_[0]), dyadic_tuple_to_frac(ratio._mpi_[1])
 
     print("=" * 76)
-    print("EXACT UNROUNDED EVALUATION OF GH26 APPENDIX D (N_a = 1000, dps = 60)")
+    print(f"{label} (N_a = 1000, dps = 60, mpmath backend = {mp.libmp.BACKEND})")
     print("  (All printed decimals strictly outward-rounded)")
     print("=" * 76)
-    print(f"  Pr[U_A < 7]            in [{fmt_frac_down(pne_lo, 14)}, {fmt_frac_up(pne_hi, 14)}]")
-    print(f"  E[Pay_A * 1{{U_A < 7}}] in [{fmt_frac_down(loss_lo, 14)}, {fmt_frac_up(loss_hi, 14)}]")
+    print(f"  Pr[U_A < F]            in [{fmt_frac_down(pne_lo, 14)}, {fmt_frac_up(pne_hi, 14)}]")
+    print(f"  E[Pay_A * 1{{U_A < F}}] in [{fmt_frac_down(loss_lo, 14)}, {fmt_frac_up(loss_hi, 14)}]")
     print(f"  (E_A + S_A) / S_A      in [{fmt_frac_down(rat_lo, 14)}, {fmt_frac_up(rat_hi, 14)}]")
     print(f"  Elapsed: {time.time() - t0:.2f}s")
+
+
+def main():
+    eval_gh26_menu("EXACT UNROUNDED EVALUATION OF GH26 APPENDIX D (p_1 = 0, F = 7)", 280, 0, Fraction(37, 8) - Fraction(3, 10))
+    eval_gh26_menu("RE-PRICED 3-GROUP CONTROL ON GH26 ITEMS (p_1 = 1/8, F = 55/8)", 275, 5, Fraction(37, 8))
 
 
 if __name__ == "__main__":

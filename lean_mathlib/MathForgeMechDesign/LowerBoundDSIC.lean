@@ -5,7 +5,7 @@ import Mathlib.Algebra.BigOperators.Group.Finset
 /-!
 # Mechanism Design 2.195 Lower Bound: DSIC, IR, and Tie-Breaking Invariance (`L-STRETCH`)
 
-Formalizes Lemma 6 of `proof-forge/v2/paper/proof.tex`:
+Formalizes Lemma 7.3 of `paper/proof_body.tex`:
 - The posted-menu mechanism `M_0` on `A ∪ B` (offering bundle `B` at price `p_B`, and an entry-fee
   menu on `A` with entry fee `F` and item prices `p_j`).
 - The downward `(ε_1, ε_2, ε_3)`-perturbed mechanism `M_δ` on `A ∪ B`.

@@ -14,6 +14,7 @@ import copy
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,11 +74,13 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="mech_traps_") as td:
         tdir = Path(td)
 
-        # Clean Controls (Rust UB + Rust LB; Python LB verified in Tier 1)
+        # Clean Controls (Rust UB, Rust LB, Python LB)
         rc, out = run_cmd([str(RS_UB), str(CERT_UB), "2.48"])
         rec("CTRL_UB_rust", "2.48 UB", "Clean Control", "Unmodified 2.48 certificate (Rust)", rc, out, True, r"PASS.*failed=0")
         rc, out = run_cmd([str(RS_LB), str(CERT_LB)])
         rec("CTRL_LB_rust", "2.195 LB", "Clean Control", "Unmodified 2.195 certificate (Rust)", rc, out, True, r"FINAL VERDICT: PASS")
+        rc, out = run_cmd([PY_BIN, str(PY_LB), str(CERT_LB)])
+        rec("CTRL_LB_py", "2.195 LB", "Clean Control", "Unmodified 2.195 certificate (Python)", rc, out, True, r"FINAL VERDICT: PASS")
 
         # === 2.48 UB CLAIM-BINDING / SCHEMA TRAPS ===
         c = copy.deepcopy(orig_ub); c["target"] = 2.49
@@ -180,7 +183,7 @@ def main() -> None:
             "import MathForgeMechDesign.UpperBoundRecipAndTree\n"
             "open MathForgeMechDesign.Cert248 MathForgeMechDesign.UpperBoundRecipAndTree\n"
             "theorem trap_247 : qToReal certTarget ≤ 247 / 100 := by unfold qToReal certTarget; norm_num\n")
-        rec("U_AS6_lean_tighten_247", "2.48 UB", "Claim-Binding/Constant-Pin", "Lean Mathlib rejects tightened UB certTarget (62/25) -> 247/100", rc, out, False, r"unsolved goals|norm_num")
+        rec("U_CB6_lean_target_pin", "2.48 UB", "Claim-Binding/Constant-Pin", "Lean Mathlib rejects tightened UB certTarget (62/25) -> 247/100", rc, out, False, r"unsolved goals|norm_num")
 
         rc, out = run_cmd(["lake", "env", "lean", "--stdin"], cwd=LEAN_MD, stdin_text=
             "import MathForgeMechDesign.UpperBoundRecipAndTree\n"
@@ -260,12 +263,61 @@ def main() -> None:
         rc, out = run_cmd(["lake", "env", "lean", "--stdin"], cwd=LEAN_MD, stdin_text=
             "import MathForgeMechDesign.LowerBoundChebyshevAndWitness\nopen MathForgeMechDesign.LowerBoundChebyshev\n"
             "theorem trap_2196 : (2196 : ℝ) / 1000 < certRatioR := by unfold certRatioR; norm_num\n")
-        rec("L_AS4_lean_tighten_2196", "2.195 LB", "Arithmetic-Soundness", "Lean Mathlib rejects tightened LB 439/200 -> 2196/1000", rc, out, False, r"unsolved goals|norm_num")
+        rec("L_CB6_lean_ratio_pin", "2.195 LB", "Claim-Binding/Constant-Pin", "Lean Mathlib rejects tightened LB 439/200 -> 2196/1000 vs certRatioR", rc, out, False, r"unsolved goals|norm_num")
 
         rc, out = run_cmd(["lake", "env", "lean", "--stdin"], cwd=LEAN_MD, stdin_text=
             "import MathForgeMechDesign.LowerBoundPmf\nopen MathForgeMechDesign.LowerBoundPmf\n"
             "theorem trap_pmf_mut : (228/2000 + 207/2000 + 9/250 + 547/2000 + 179/1000 + 199/1000 + 817/2000 + 7119/2000 : ℝ) = S_A := by unfold S_A; norm_num\n")
-        rec("L_AS5_lean_pmf_mut", "2.195 LB", "Arithmetic-Soundness", "Lean Mathlib rejects perturbed A1 r_num=228 vs S_A=1949/400", rc, out, False, r"unsolved goals|norm_num")
+        rec("L_CB7_lean_pmf_pin", "2.195 LB", "Claim-Binding/Constant-Pin", "Lean Mathlib rejects perturbed A1 r_num=228 vs S_A=1949/400", rc, out, False, r"unsolved goals|norm_num")
+
+        # Rust LB arithmetic-soundness trap: bypass raw pin to 2196/1000 in scratch crate copy -> PGF rejects 2.196 on arithmetic grounds
+        rs_lb_mut_dir = tdir / "rs_lb_mut"
+        shutil.copytree(REPO / "verifiers" / "rust" / "lb_2195", rs_lb_mut_dir, ignore=shutil.ignore_patterns("target"))
+        rs_src_p = rs_lb_mut_dir / "src" / "main.rs"
+        rs_src = rs_src_p.read_text(encoding="utf-8")
+        rs_src_mut = rs_src.replace("(439, 200)", "(2196, 1000)").replace("Rat::new(439, 200)", "Rat::new(2196, 1000)")
+        assert rs_src_mut != rs_src
+        rs_src_p.write_text(rs_src_mut, encoding="utf-8")
+        cargo_home = tdir / "cargo_home_trap"
+        cargo_home.mkdir()
+        env_rs = os.environ.copy()
+        env_rs["CARGO_HOME"] = str(cargo_home)
+        env_rs["CARGO_BUILD_JOBS"] = "4"
+        bld_rs = subprocess.run(["cargo", "build", "--release", "--locked", "--offline"], cwd=str(rs_lb_mut_dir), env=env_rs, capture_output=True, text=True)
+        if bld_rs.returncode != 0:
+            rc, out = bld_rs.returncode, bld_rs.stdout + "\n" + bld_rs.stderr
+        else:
+            rc, out = run_cmd([str(rs_lb_mut_dir / "target" / "release" / "verify_lb_rust"), str(fp_t)])
+        rec("L_AS1_target2196_arith_rs", "2.195 LB", "Arithmetic-Soundness", "Bypass pins & drive target=2.196 (> 2.195136...) -> ratio failure (Rust)", rc, out, False, r"Ratio lower bound <= target|panicked")
+
+        # JSON == Lean kernel rfl regression trap: gridDen := 100 -> 100 + 1 must be REJECTED
+        lean_mut = tdir / "lean_mut"
+        lean_mut.mkdir()
+        for fname in ("lakefile.lean", "lean-toolchain", "lake-manifest.json"):
+            shutil.copy2(LEAN_MD / fname, lean_mut / fname)
+        (lean_mut / ".lake").mkdir()
+        os.symlink(LEAN_MD / ".lake" / "packages", lean_mut / ".lake" / "packages")
+        (lean_mut / "MathForgeMechDesign").mkdir()
+        shutil.copy2(LEAN_MD / "MathForgeMechDesign" / "CertTreeData248.lean", lean_mut / "MathForgeMechDesign" / "CertTreeData248.lean")
+        pmf_src = (LEAN_MD / "MathForgeMechDesign" / "LowerBoundPmf.lean").read_text(encoding="utf-8")
+        pmf_mut = pmf_src.replace("def gridDen : ℕ := 100", "def gridDen : ℕ := 100 + 1", 1)
+        assert pmf_mut != pmf_src
+        (lean_mut / "MathForgeMechDesign" / "LowerBoundPmf.lean").write_text(pmf_mut, encoding="utf-8")
+        rc, out = run_cmd([PY_BIN, str(REPO / "scripts" / "check_json_lean_eq_mech.py"), "--lean-dir", str(lean_mut)])
+        rec("L_CB8_lean_gridDen_100plus1", "JSON==Lean", "JSON==Lean Equality", "Mutate gridDen := 100 -> 100 + 1 rejected by Lean-kernel rfl checker", rc, out, False, r"type mismatch|rfl proof rejected")
+
+        # Metadata / release-delta tamper trap: modify scripts/render_metadata.py -> verify_release_delta.py must reject
+        if (REPO / "SHA256SUMS.txt").is_file() and (REPO / "arxiv_mech_design.tar.gz").is_file():
+            meta_mut = tdir / "meta_mut"
+            meta_mut.mkdir()
+            shutil.copytree(REPO / "paper", meta_mut / "paper")
+            shutil.copytree(REPO / "scripts", meta_mut / "scripts")
+            shutil.copy2(REPO / "SHA256SUMS.txt", meta_mut / "SHA256SUMS.txt")
+            shutil.copy2(REPO / "arxiv_mech_design.tar.gz", meta_mut / "arxiv_mech_design.tar.gz")
+            rend_p = meta_mut / "scripts" / "render_metadata.py"
+            rend_p.write_text(rend_p.read_text(encoding="utf-8") + "\n# tamper\n", encoding="utf-8")
+            rc, out = run_cmd([PY_BIN, str(meta_mut / "scripts" / "verify_release_delta.py")], cwd=meta_mut)
+            rec("M_CB1_tamper_renderer", "Metadata/Delta", "Claim-Binding/Schema", "Tampered scripts/render_metadata.py rejected by SHA256SUMS auth", rc, out, False, r"digest mismatch|refusing to import")
 
     lines = [
         "# Mechanism Design `[2.195, 2.48]` Negative Trap and Mutation Matrix",

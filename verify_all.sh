@@ -31,20 +31,20 @@ if "$PY_BIN" -O "$REPO_ROOT/verifiers/python/verify_3m_independent.py" "$REPO_RO
 fi
 echo "Confirmed -O refusal on both Mechanism Design Python verifiers."
 
-echo "=== [3/6] Mechanical JSON == Lean exact equality check ==="
-python3 -I -O "$REPO_ROOT/scripts/check_json_lean_eq_mech.py"
-
-echo "=== [4/6] Lean 4 + Mathlib cold build (MathForgeMechDesign, Mathlib cache preserved) ==="
+echo "=== [3/6] Lean 4 + Mathlib cold build (MathForgeMechDesign, Mathlib cache preserved) ==="
 (cd "$REPO_ROOT/lean_mathlib" && lake clean MathForgeMechDesign && lake build)
+
+echo "=== [4/6] Lean-kernel rfl JSON == Lean exact equality check ==="
+python3 -I -O "$REPO_ROOT/scripts/check_json_lean_eq_mech.py"
 
 echo "=== [5/6] Separated negative-trap & mutation suite ==="
 PY_BIN="$PY_BIN" "$PY_BIN" "$REPO_ROOT/negative_traps/run_mech_negative_traps.py"
 
 if [ "${RUN_FULL_PY_248:-0}" = "1" ]; then
-  echo "=== [6/6] Serialized solo Python mpmath.iv 2.48 UB verifier (~57 min, 8 workers) ==="
+  echo "=== [6/6] Serialized solo Python mpmath.iv 2.48 UB verifier (~39 min, 8 workers) ==="
   "$PY_BIN" "$REPO_ROOT/verifiers/python/verify_3m_independent.py" "$REPO_ROOT/certificates/tree_cert_3m_2480_tight.json" --workers "${PY_248_WORKERS:-8}"
 else
-  echo "=== [6/6] Skipping ~57 min Python 2.48 UB run (set RUN_FULL_PY_248=1 to execute solo) ==="
+  echo "=== [6/6] Skipping ~39 min Python 2.48 UB run (set RUN_FULL_PY_248=1 to execute solo) ==="
 fi
 
 echo "ALL MECHANISM DESIGN CHECKS PASSED!"

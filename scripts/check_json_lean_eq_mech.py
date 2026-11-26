@@ -1,22 +1,26 @@
 #!/usr/bin/env python3
 """
-Standalone JSON-to-Lean exact rational equality checker for Mechanism Design certificates:
+Lean-kernel JSON-to-Lean exact equality checker for Mechanism Design certificates:
 1. tree_cert_3m_2480_tight.json  <->  MathForgeMechDesign/CertTreeData248.lean
 2. cert_lb_2195.json             <->  MathForgeMechDesign/LowerBoundPmf.lean
-Exits 0 iff every single rational parameter, node, box, leaf vector, and group entry matches exactly.
+
+Generates bottom-up Lean 4 definitions directly from the JSON files (using parse_float=str
+for exact decimal-to-Fraction parsing) and proves definitional equality (`:= rfl`) against
+the compiled Lean declarations (`certTree248`, `certL1..certTarget`, `gridDen`,
+`groupSizeNa`, `entryFeeTicks`, and `groupSpec 0..7`) inside Lean 4's kernel.
+Exits 0 iff Lean 4's kernel accepts every equality proof.
 """
+from __future__ import annotations
+
+import argparse
 import json
-import re
+import os
+import subprocess
 import sys
 from fractions import Fraction
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-BASE = REPO / "lean_mathlib"
-TREE_JSON = REPO / "certificates" / "tree_cert_3m_2480_tight.json"
-TREE_LEAN = BASE / "MathForgeMechDesign" / "CertTreeData248.lean"
-LB_JSON = REPO / "certificates" / "cert_lb_2195.json"
-LB_LEAN = BASE / "MathForgeMechDesign" / "LowerBoundPmf.lean"
 
 
 def require(cond: bool, msg: str) -> None:
@@ -24,183 +28,177 @@ def require(cond: bool, msg: str) -> None:
         raise RuntimeError(f"JSON==LEAN CHECK FAILED: {msg}")
 
 
-class LeanTreeParser:
-    def __init__(self, text: str, helpers: dict):
-        self.tokens = re.findall(
-            r"CertTree\.split|CertTree\.leaf|CertTree\.disjoint|subTree_\d+|some|none|⟨|⟩|\(|\)|\[|\]|,|-?\d+",
-            text,
+def parse_exact_frac(x) -> Fraction:
+    require(not isinstance(x, bool), f"Boolean not allowed as rational: {x!r}")
+    if isinstance(x, (int, str)):
+        return Fraction(str(x))
+    raise RuntimeError(f"JSON==LEAN CHECK FAILED: Non-exact numeric token {x!r} (expected int or str via parse_float=str)")
+
+
+def parse_exact_int(x, label: str) -> int:
+    require(type(x) is int, f"{label} must be exact JSON int, got {type(x).__name__}: {x!r}")
+    return x
+
+
+def fmt_q(fr: Fraction) -> str:
+    require(fr.denominator > 0, f"Non-positive denominator in {fr}")
+    return f"⟨({fr.numerator}), {fr.denominator}⟩"
+
+
+def fmt_q_list(xs: list, expected_len: int | None, label: str) -> str:
+    require(isinstance(xs, list), f"{label} must be a list")
+    if expected_len is not None:
+        require(len(xs) == expected_len, f"{label} length {len(xs)} != {expected_len}")
+    else:
+        require(len(xs) > 0, f"{label} must be non-empty")
+    return "[" + ", ".join(fmt_q(parse_exact_frac(v)) for v in xs) + "]"
+
+
+def fmt_box(box: list) -> str:
+    require(isinstance(box, list) and len(box) == 6, f"Box must have 6 coordinates, got {len(box) if isinstance(box, list) else type(box)}")
+    return "⟨" + ", ".join(fmt_q(parse_exact_frac(v)) for v in box) + "⟩"
+
+
+def build_lean_check(tree_json: Path, lb_json: Path) -> tuple[str, int]:
+    jtree = json.loads(tree_json.read_text(encoding="utf-8"), parse_float=str)
+    jlb = json.loads(lb_json.read_text(encoding="utf-8"), parse_float=str)
+
+    ls = jtree["ls"]
+    require(isinstance(ls, list) and len(ls) == 3, f"Expected 3 ls entries, got {ls!r}")
+    target = parse_exact_frac(jtree["target"])
+
+    lines: list[str] = [
+        "import MathForgeMechDesign.CertTreeData248",
+        "import MathForgeMechDesign.LowerBoundPmf",
+        "open MathForgeMechDesign.Cert248",
+        "open MathForgeMechDesign.LowerBoundPmf",
+        "namespace JsonLeanEqCheck",
+        "set_option maxRecDepth 2000000",
+        "set_option maxHeartbeats 0",
+    ]
+
+    counter = 0
+
+    def emit_node(node: dict) -> str:
+        nonlocal counter
+        ntype = node.get("type")
+        box_s = fmt_box(node["box"])
+        if ntype == "split":
+            axis = parse_exact_int(node["axis"], "split.axis")
+            require(axis in (0, 1, 2), f"Invalid split axis {axis}")
+            children = node["children"]
+            require(isinstance(children, list) and len(children) == 2, "split must have 2 children")
+            left_name = emit_node(children[0])
+            right_name = emit_node(children[1])
+            counter += 1
+            name = f"node{counter}"
+            lines.append(f"private def {name} : CertTree := CertTree.split {box_s} {axis} {left_name} {right_name}")
+            return name
+        if ntype == "leaf":
+            a_s = fmt_q_list(node["a"], None, "leaf.a")
+            lam_s = fmt_q_list(node["lam"], len(node["a"]), "leaf.lam")
+            eta0_s = fmt_q(parse_exact_frac(node["eta0"]))
+            y_s = fmt_q_list(node["y"], 14, "leaf.y")
+            counter += 1
+            name = f"node{counter}"
+            lines.append(f"private def {name} : CertTree := CertTree.leaf {box_s} {a_s} {lam_s} {eta0_s} {y_s}")
+            return name
+        if ntype == "disjoint":
+            if "farkas_y" in node and node["farkas_y"] is not None:
+                fy_s = f"(some {fmt_q_list(node['farkas_y'], 14, 'disjoint.farkas_y')})"
+            else:
+                fy_s = "none"
+            counter += 1
+            name = f"node{counter}"
+            lines.append(f"private def {name} : CertTree := CertTree.disjoint {box_s} {fy_s}")
+            return name
+        raise RuntimeError(f"JSON==LEAN CHECK FAILED: Unknown tree node type {ntype!r}")
+
+    root_name = emit_node(jtree["tree"])
+
+    lines.extend([
+        f"example : certTree248 = {root_name} := rfl",
+        f"example : certL1 = {fmt_q(parse_exact_frac(ls[0]))} := rfl",
+        f"example : certL2 = {fmt_q(parse_exact_frac(ls[1]))} := rfl",
+        f"example : certL3 = {fmt_q(parse_exact_frac(ls[2]))} := rfl",
+        f"example : certTarget = {fmt_q(target)} := rfl",
+    ])
+
+    grid_den = parse_exact_int(jlb["grid_den"], "grid_den")
+    na = parse_exact_int(jlb["Na"], "Na")
+    entry_fee_ticks = parse_exact_int(jlb["entry_fee_ticks"], "entry_fee_ticks")
+    groups = jlb["groups"]
+    require(isinstance(groups, list) and len(groups) == 8, f"Expected 8 groups, got {len(groups) if isinstance(groups, list) else type(groups)}")
+
+    lines.extend([
+        f"example : gridDen = {grid_den} := rfl",
+        f"example : groupSizeNa = {na} := rfl",
+        f"example : entryFeeTicks = {entry_fee_ticks} := rfl",
+    ])
+
+    for idx, g in enumerate(groups):
+        gname = g["name"]
+        require(isinstance(gname, str) and gname.isascii() and '"' not in gname and "\\" not in gname, f"Invalid group name {gname!r}")
+        r_num = parse_exact_int(g["r_num"], f"groups[{idx}].r_num")
+        r_den = parse_exact_int(g["r_den"], f"groups[{idx}].r_den")
+        k_min = parse_exact_int(g["k_min"], f"groups[{idx}].k_min")
+        k_max = parse_exact_int(g["k_max"], f"groups[{idx}].k_max")
+        p_tick = parse_exact_int(g["p_tick"], f"groups[{idx}].p_tick")
+        lines.append(
+            f'example : groupSpec {idx} = ⟨"{gname}", {r_num}, {r_den}, {k_min}, {k_max}, {p_tick}⟩ := rfl'
         )
-        self.pos = 0
-        self.helpers = helpers
 
-    def peek(self):
-        return self.tokens[self.pos] if self.pos < len(self.tokens) else None
-
-    def pop(self, expected=None):
-        tok = self.tokens[self.pos]
-        if expected is not None and tok != expected:
-            raise ValueError(f"Expected {expected!r}, got {tok!r} at pos {self.pos}")
-        self.pos += 1
-        return tok
-
-    def parse_int(self) -> int:
-        if self.peek() == "(":
-            self.pop("(")
-            v = int(self.pop())
-            self.pop(")")
-            return v
-        return int(self.pop())
-
-    def parse_q(self) -> Fraction:
-        self.pop("⟨")
-        n = self.parse_int()
-        self.pop(",")
-        d = int(self.pop())
-        self.pop("⟩")
-        require(d > 0, f"Non-positive denominator {d}")
-        return Fraction(n, d)
-
-    def parse_q_list(self) -> list[Fraction]:
-        self.pop("[")
-        out = []
-        if self.peek() != "]":
-            out.append(self.parse_q())
-            while self.peek() == ",":
-                self.pop(",")
-                out.append(self.parse_q())
-        self.pop("]")
-        return out
-
-    def parse_box(self) -> list[Fraction]:
-        self.pop("⟨")
-        out = [self.parse_q()]
-        for _ in range(5):
-            self.pop(",")
-            out.append(self.parse_q())
-        self.pop("⟩")
-        return out
-
-    def parse_tree(self):
-        if self.peek() == "(":
-            self.pop("(")
-            t = self.parse_tree()
-            self.pop(")")
-            return t
-        tok = self.pop()
-        if tok.startswith("subTree_"):
-            return self.helpers[tok]
-        if tok == "CertTree.split":
-            box = self.parse_box()
-            ax = int(self.pop())
-            left = self.parse_tree()
-            right = self.parse_tree()
-            return {"type": "split", "box": box, "axis": ax, "children": [left, right]}
-        if tok == "CertTree.leaf":
-            box = self.parse_box()
-            a = self.parse_q_list()
-            lam = self.parse_q_list()
-            eta0 = self.parse_q()
-            y = self.parse_q_list()
-            return {"type": "leaf", "box": box, "a": a, "lam": lam, "eta0": eta0, "y": y}
-        if tok == "CertTree.disjoint":
-            box = self.parse_box()
-            if self.peek() == "none":
-                self.pop("none")
-                return {"type": "disjoint", "box": box}
-            self.pop("(")
-            self.pop("some")
-            fy = self.parse_q_list()
-            self.pop(")")
-            return {"type": "disjoint", "box": box, "farkas_y": fy}
-        raise ValueError(f"Unexpected token {tok!r}")
+    lines.append("end JsonLeanEqCheck")
+    return "\n".join(lines) + "\n", counter
 
 
-def compare_trees(jnode, lnode, path="root"):
-    require(jnode["type"] == lnode["type"], f"Type mismatch at {path}")
-    jbox = [Fraction(str(x)) for x in jnode["box"]]
-    require(jbox == lnode["box"], f"Box mismatch at {path}: {jbox} != {lnode['box']}")
-    t = jnode["type"]
-    if t == "split":
-        require(int(jnode["axis"]) == lnode["axis"], f"Axis mismatch at {path}")
-        return (
-            1
-            + compare_trees(jnode["children"][0], lnode["children"][0], path + ".L")
-            + compare_trees(jnode["children"][1], lnode["children"][1], path + ".R")
-        )
-    if t == "leaf":
-        for k in ["a", "lam", "y"]:
-            jv = [Fraction(str(x)) for x in jnode[k]]
-            require(jv == lnode[k], f"Leaf {k} mismatch at {path}")
-        require(Fraction(str(jnode["eta0"])) == lnode["eta0"], f"Leaf eta0 mismatch at {path}")
-        return 1
-    if t == "disjoint":
-        if "farkas_y" in jnode:
-            require("farkas_y" in lnode, f"Missing farkas_y at {path}")
-            jfy = [Fraction(str(x)) for x in jnode["farkas_y"]]
-            require(jfy == lnode["farkas_y"], f"farkas_y mismatch at {path}")
-        else:
-            require("farkas_y" not in lnode, f"Unexpected farkas_y at {path}")
-        return 1
-    raise ValueError(t)
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Lean-kernel rfl JSON == Lean certificate equality checker.")
+    ap.add_argument("--lean-dir", type=Path, default=REPO / "lean_mathlib")
+    ap.add_argument("--tree-json", type=Path, default=REPO / "certificates" / "tree_cert_3m_2480_tight.json")
+    ap.add_argument("--lb-json", type=Path, default=REPO / "certificates" / "cert_lb_2195.json")
+    args = ap.parse_args()
 
+    lean_dir = args.lean_dir.resolve()
+    require(lean_dir.is_dir(), f"Missing lean_mathlib directory: {lean_dir}")
+    lean_code, n_nodes = build_lean_check(args.tree_json.resolve(), args.lb_json.resolve())
 
-def check_tree():
-    with open(TREE_JSON) as f:
-        jdata = json.load(f, parse_float=str)
-    ltext = TREE_LEAN.read_text()
+    env = os.environ.copy()
+    env["PATH"] = str(Path.home() / ".elan" / "bin") + ":" + env.get("PATH", "")
 
-    # Check scalars
-    for name, expected in [
-        ("certL1", Fraction(str(jdata["ls"][0]))),
-        ("certL2", Fraction(str(jdata["ls"][1]))),
-        ("certL3", Fraction(str(jdata["ls"][2]))),
-        ("certTarget", Fraction(str(jdata["target"]))),
-    ]:
-        m = re.search(rf"def {name} : Q := ⟨\(?(-?\d+)\)?,\s*(\d+)⟩", ltext)
-        require(m is not None, f"Missing {name} in Lean file")
-        got = Fraction(int(m.group(1)), int(m.group(2)))
-        require(got == expected, f"{name} mismatch: {got} != {expected}")
+    # Ensure CertTreeData248 and LowerBoundPmf oleans are fresh before checking rfl (no-op if already built).
+    bld = subprocess.run(
+        ["lake", "build", "MathForgeMechDesign.CertTreeData248", "MathForgeMechDesign.LowerBoundPmf"],
+        cwd=str(lean_dir),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if bld.returncode != 0:
+        sys.stderr.write(bld.stdout + "\n" + bld.stderr + "\n")
+        raise RuntimeError(f"JSON==LEAN CHECK FAILED: lake build failed with exit code {bld.returncode}")
 
-    # Parse helper subtrees in order
-    helpers = {}
-    for m in re.finditer(r"def (subTree_\d+) : CertTree :=\s*(.+?)(?=\n(?:def |end ))", ltext, re.S):
-        name, body = m.group(1), m.group(2)
-        p = LeanTreeParser(body, helpers)
-        helpers[name] = p.parse_tree()
-        require(p.pos == len(p.tokens), f"Unparsed tokens in {name}")
+    chk = subprocess.run(
+        ["lake", "env", "lean", "--stdin"],
+        cwd=str(lean_dir),
+        input=lean_code,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    if chk.returncode != 0:
+        sys.stderr.write(chk.stdout + "\n" + chk.stderr + "\n")
+        raise RuntimeError(f"JSON==LEAN CHECK FAILED: Lean kernel rfl proof rejected (exit code {chk.returncode})")
 
-    mroot = re.search(r"def certTree248 : CertTree :=\s*(.+?)(?=\nend )", ltext, re.S)
-    require(mroot is not None, "Missing certTree248")
-    proot = LeanTreeParser(mroot.group(1), helpers)
-    ltree = proot.parse_tree()
-    require(proot.pos == len(proot.tokens), "Unparsed tokens in certTree248")
-
-    n_nodes = compare_trees(jdata["tree"], ltree)
-    print(f"[PASS] tree_cert_3m_2480_tight.json == CertTreeData248.lean (exact rational match across all {n_nodes} nodes, ls, target)")
-
-
-def check_lb():
-    require(LB_LEAN.exists(), f"Missing {LB_LEAN}")
-    with open(LB_JSON) as f:
-        jdata = json.load(f, parse_float=str)
-    ltext = LB_LEAN.read_text()
-    for name, val in [
-        ("gridDen", jdata["grid_den"]),
-        ("groupSizeNa", jdata["Na"]),
-        ("entryFeeTicks", jdata["entry_fee_ticks"]),
-    ]:
-        m = re.search(rf"def {name} : ℕ := (\d+)", ltext)
-        require(m is not None and int(m.group(1)) == val, f"{name} mismatch")
-
-    rows = re.findall(r'⟨"(A\d+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)⟩', ltext)
-    require(len(rows) == len(jdata["groups"]) == 8, f"Expected 8 groups, found {len(rows)}")
-    for idx, (g, row) in enumerate(zip(jdata["groups"], rows)):
-        exp = (g["name"], g["r_num"], g["r_den"], g["k_min"], g["k_max"], g["p_tick"])
-        got = (row[0], int(row[1]), int(row[2]), int(row[3]), int(row[4]), int(row[5]))
-        require(got == exp, f"Group {idx} mismatch: {got} != {exp}")
-    print("[PASS] cert_lb_2195.json == LowerBoundPmf.lean (exact match on D, Na, F_ticks, and all 8 groups)")
+    print(
+        f"[PASS] Lean-kernel rfl: tree_cert_3m_2480_tight.json == CertTreeData248.lean "
+        f"(all {n_nodes} nodes, certL1..certL3, certTarget)"
+    )
+    print(
+        "[PASS] Lean-kernel rfl: cert_lb_2195.json == LowerBoundPmf.lean "
+        "(gridDen, groupSizeNa, entryFeeTicks, groupSpec 0..7)"
+    )
 
 
 if __name__ == "__main__":
-    check_tree()
-    check_lb()
+    main()
