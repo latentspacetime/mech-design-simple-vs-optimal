@@ -1,5 +1,7 @@
 # Simple versus Optimal Mechanisms (`[2.195, 2.48]`) Verification and Formalization Bundle
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24550849.svg)](https://doi.org/10.5281/zenodo.24550849)
+
 Machine-checked certificates, offline-reproducible Rust and Python verifiers, Lean 4 + Mathlib formalization (`lean_mathlib/`, 55 audited theorems plus 21 public helper lemmas), and unified arXiv manuscript source for:
 
 - **Upper Bound:** `REV(X) <= (62/25) * max(SREV(X), BREV(X)) = 2.48 * max(SREV(X), BREV(X))` for all `m >= 1` and independent nonnegative distributions (vs. GH26 stated `5/2 = 2.50` in `arXiv:2609.35711v3` Prop. 4.6 and derived commentary `1499/600 = 2.498333...`).
